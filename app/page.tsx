@@ -63,8 +63,26 @@ const WORDS: Word[] = RAW_WORDS.map((w) => ({ ...w, word: w.word.replace(/\s/g, 
 const SIZE = 19;
 const key = (r: number, c: number) => `${r}:${c}`;
 
-function generateCrossword(): { cells: Map<string, Cell>; words: PlacedWord[]; bounds: [number, number, number, number] } {
-  const shuffled = [...WORDS].sort(() => Math.random() - 0.5).slice(0, 28);
+function dateKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+function seedFromDate(value: string) {
+  return [...value].reduce((seed, char) => Math.imul(seed ^ char.charCodeAt(0), 2654435761), 2166136261) >>> 0;
+}
+
+function seededRandom(seed: number) {
+  return () => {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let value = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    value = value + Math.imul(value ^ value >>> 7, 61 | value) ^ value;
+    return ((value ^ value >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function generateCrossword(seed?: number): { cells: Map<string, Cell>; words: PlacedWord[]; bounds: [number, number, number, number] } {
+  const random = seed === undefined ? Math.random : seededRandom(seed);
+  const shuffled = [...WORDS].sort(() => random() - 0.5).slice(0, 28);
   const cells = new Map<string, Cell>();
   const placed: PlacedWord[] = [];
 
@@ -108,7 +126,7 @@ function generateCrossword(): { cells: Map<string, Cell>; words: PlacedWord[]; b
       const row = direction === "down" ? pw.row - a : pw.row + b;
       const col = direction === "across" ? pw.col - a : pw.col + b;
       const score = canPlace(item.word, row, col, direction);
-      if (score > 0 && (!best || score > best.score || Math.random() > .7)) best = { row, col, direction, score };
+      if (score > 0 && (!best || score > best.score || random() > .7)) best = { row, col, direction, score };
     }
     if (best) put(item, best.row, best.col, best.direction);
   }
@@ -128,15 +146,40 @@ function Logo() {
   return <div className="logo" aria-label="CrossRap"><span>CR</span><strong>CROSS<span>RAP</span></strong></div>;
 }
 
+function MassakiBrand({ compact = false }: { compact?: boolean }) {
+  return <a className={`massaki-brand ${compact ? "compact" : ""}`} href="https://www.massaririmas.com" target="_blank" rel="noreferrer" aria-label="Conheça o curso Método Massaki de Rimas">
+    <span className="massaki-crop"><img src="/massaki-mark.png" alt="" /></span>
+    <span><small>UMA EXPERIÊNCIA</small><b>VICTOR MASSAKI</b></span>
+  </a>;
+}
+
 export default function Home() {
+  const today = dateKey();
+  const dailySeed = seedFromDate(today);
+  const dailyNumber = Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse("2024-01-01T00:00:00Z")) / 86400000) + 1;
   const [screen, setScreen] = useState<"home" | "game">("home");
-  const [puzzle, setPuzzle] = useState(() => generateCrossword());
+  const [mode, setMode] = useState<"daily" | "infinite">("daily");
+  const [puzzle, setPuzzle] = useState(() => generateCrossword(dailySeed));
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [active, setActive] = useState(0);
   const [seconds, setSeconds] = useState(0);
   const [score, setScore] = useState(0);
   const [toast, setToast] = useState("");
+  const [showResult, setShowResult] = useState(false);
+  const [streak, setStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
+  const [hintsUsed, setHintsUsed] = useState(0);
+  const [now, setNow] = useState(() => new Date());
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    try {
+      const saved = JSON.parse(localStorage.getItem("crossrap-player") || "{}");
+      setStreak(saved.streak || 0); setBestStreak(saved.bestStreak || 0);
+    } catch { /* device without storage */ }
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (screen !== "game") return;
@@ -144,13 +187,41 @@ export default function Home() {
     return () => clearInterval(id);
   }, [screen, puzzle]);
 
-  const restart = useCallback(() => {
-    setPuzzle(generateCrossword()); setAnswers({}); setScore(0); setSeconds(0); setActive(0); setScreen("game");
+  const startInfinite = useCallback(() => {
+    setMode("infinite"); setPuzzle(generateCrossword()); setAnswers({}); setScore(0); setSeconds(0); setActive(0); setHintsUsed(0); setShowResult(false); setScreen("game");
+  }, []);
+  const startDaily = useCallback(() => {
+    setMode("daily"); setPuzzle(generateCrossword(seedFromDate(dateKey()))); setAnswers({}); setScore(0); setSeconds(0); setActive(0); setHintsUsed(0); setShowResult(false); setScreen("game");
   }, []);
   const rows = useMemo(() => Array.from({ length: puzzle.bounds[1] - puzzle.bounds[0] + 1 }), [puzzle]);
   const cols = useMemo(() => Array.from({ length: puzzle.bounds[3] - puzzle.bounds[2] + 1 }), [puzzle]);
   const current = puzzle.words[active];
   const completed = puzzle.words.filter((w) => [...w.word].every((_, i) => answers[key(w.row + (w.direction === "down" ? i : 0), w.col + (w.direction === "across" ? i : 0))] === w.word[i])).length;
+  const finalScore = Math.max(0, completed * 100 + Math.max(0, 300 - seconds) - hintsUsed * 10);
+  const saoPauloTime = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(now);
+  const timePart = (type: Intl.DateTimeFormatPartTypes) => Number(saoPauloTime.find(part => part.type === type)?.value || 0);
+  const remaining = 86400 - (timePart("hour") % 24 * 3600 + timePart("minute") * 60 + timePart("second"));
+  const countdown = `${String(Math.floor(remaining / 3600)).padStart(2,"0")}:${String(Math.floor(remaining % 3600 / 60)).padStart(2,"0")}:${String(remaining % 60).padStart(2,"0")}`;
+
+  useEffect(() => {
+    if (!puzzle.words.length || completed !== puzzle.words.length || showResult) return;
+    let nextStreak = streak;
+    let nextBest = bestStreak;
+    if (mode === "daily") {
+      try {
+        const saved = JSON.parse(localStorage.getItem("crossrap-player") || "{}");
+        if (saved.lastDaily !== today) {
+          const yesterday = new Date(`${today}T12:00:00Z`); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+          nextStreak = saved.lastDaily === dateKey(yesterday) ? (saved.streak || 0) + 1 : 1;
+          nextBest = Math.max(saved.bestStreak || 0, nextStreak);
+          localStorage.setItem("crossrap-player", JSON.stringify({ streak: nextStreak, bestStreak: nextBest, lastDaily: today }));
+          setStreak(nextStreak); setBestStreak(nextBest);
+        }
+      } catch { /* keep result available without storage */ }
+    }
+    const timer = setTimeout(() => setShowResult(true), 350);
+    return () => clearTimeout(timer);
+  }, [completed, puzzle.words.length, showResult, mode, streak, bestStreak, today]);
 
   function wordCells(wordIndex = active) {
     const word = puzzle.words[wordIndex];
@@ -226,27 +297,47 @@ export default function Home() {
     const spots = [...current.word].map((_, i) => [current.row + (current.direction === "down" ? i : 0), current.col + (current.direction === "across" ? i : 0)]).filter(([r,c], i) => answers[key(r,c)] !== current.word[i]);
     if (!spots.length) return;
     const [r,c] = spots[Math.floor(Math.random() * spots.length)];
-    setAnswers(a => ({ ...a, [key(r,c)]: puzzle.cells.get(key(r,c))!.letter })); setScore(s => Math.max(0, s - 20)); setToast("Letra revelada · −20 pts");
+    setAnswers(a => ({ ...a, [key(r,c)]: puzzle.cells.get(key(r,c))!.letter })); setScore(s => Math.max(0, s - 20)); setHintsUsed(value => value + 2); setToast("Letra revelada · −20 pts");
   }
-  function showHint() { setScore(s => Math.max(0, s - 10)); setToast(current.hint); }
+  function showHint() { setScore(s => Math.max(0, s - 10)); setHintsUsed(value => value + 1); setToast(current.hint); }
+
+  async function shareResult() {
+    const squares = Array.from({ length: Math.min(16, puzzle.words.length) }, (_, index) => index < hintsUsed ? "🟨" : "🟩");
+    const grid = Array.from({ length: Math.ceil(squares.length / 4) }, (_, row) => squares.slice(row * 4, row * 4 + 4).join("")).join("\n");
+    const text = `CrossRap #${dailyNumber} 🎤\n${grid}\n⏱ ${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}  🔥 ${streak} dias\n\nVocê manja de rap? Jogue em ${window.location.origin}`;
+    try {
+      if (navigator.share) await navigator.share({ title: "Meu resultado no CrossRap", text, url: window.location.origin });
+      else { await navigator.clipboard.writeText(text); setToast("Resultado copiado. Agora é só postar!"); }
+    } catch { /* sharing was cancelled */ }
+  }
 
   if (screen === "home") return <main className="shell home">
-    <header><Logo /><nav><button className="nav-active">Início</button><button onClick={() => setScreen("game")}>Jogar</button><button>Ranking</button><button>Conquistas</button></nav><button className="profile">VN <i>4</i></button></header>
+    <header><Logo /><nav><button className="nav-active">Início</button><button onClick={startDaily}>Jogar</button><button>Ranking</button><button>Conquistas</button></nav><MassakiBrand compact /><button className="profile">VN <i>{streak}</i></button></header>
     <section className="hero">
-      <div className="hero-copy"><div className="eyebrow"><span>●</span> O desafio do dia está no ar</div><h1>ONDE O RAP<br/>ENCONTRA AS<br/><em>PALAVRAS.</em></h1><p>Teste seu conhecimento, complete as rimas e prove que sua mente também tem flow.</p><div className="hero-actions"><button className="primary" onClick={restart}>JOGAR AGORA <span>→</span></button><button className="secondary">▶ &nbsp; COMO JOGAR</button></div><small>🔥 <b>2.847</b> jogadores online agora</small></div>
+      <div className="hero-copy"><div className="eyebrow"><span>●</span> O desafio do dia está no ar</div><h1>ONDE O RAP<br/>ENCONTRA AS<br/><em>PALAVRAS.</em></h1><p>Uma cruzada por dia. O mesmo desafio para toda a cena. Complete, mantenha sua sequência e compartilhe sem dar spoiler.</p><div className="hero-actions"><button className="primary" onClick={startDaily}>JOGAR O DESAFIO <span>→</span></button><button className="secondary" onClick={startInfinite}>∞ &nbsp; MODO INFINITO</button></div><div className="streak-line"><b>🔥 {streak} dias</b><span>Melhor sequência: {bestStreak}</span></div></div>
       <div className="record-wrap"><div className="orbit one">HIP HOP</div><div className="orbit two">+150 XP</div><div className="record"><div className="record-grooves"></div><div className="label"><b>CROSS<br/><span>RAP</span></b><small>SIDE A<br/>45 RPM</small></div></div><div className="tonearm"></div></div>
     </section>
-    <section className="daily-card"><div className="daily-art"><div className="bars">▥ ▤ ▥</div><span>DESAFIO<br/>DO DIA</span><b>#127</b></div><div className="daily-info"><div className="eyebrow">EDIÇÃO ESPECIAL</div><h2>Era de Ouro do Rap Nacional</h2><p>12 palavras · Dificuldade média</p><div className="progress"><i style={{width:"68%"}}></i></div><small>68% dos jogadores completaram hoje</small></div><div className="daily-time"><span>TERMINA EM</span><strong>08:42:17</strong><button onClick={restart}>JOGAR DESAFIO →</button></div></section>
-    <section className="categories"><div className="section-title"><div><span>ESCOLHA SUA VIBE</span><h2>Categorias</h2></div><button>VER TODAS →</button></div><div className="category-grid">{[["🎤","Rap Nacional","324 palavras","yellow"],["◎","Rap Internacional","286 palavras","red"],["⚔","Batalhas de Rima","198 palavras","white"],["◉","Old School","172 palavras","gray"]].map(([ic,t,n,c])=><button key={t} className={`category-card ${c}`} onClick={restart}><i>{ic}</i><b>{t}</b><span>{n}</span><em>→</em></button>)}</div></section>
+    <section className="daily-card"><div className="daily-art"><div className="bars">▥ ▤ ▥</div><span>DESAFIO<br/>DO DIA</span><b>#{dailyNumber}</b></div><div className="daily-info"><div className="eyebrow">TODO MUNDO NO MESMO BEAT</div><h2>CrossRap Diário #{dailyNumber}</h2><p>Um tabuleiro único · Disponível só hoje</p><div className="progress"><i style={{width: streak ? "78%" : "18%"}}></i></div><small>Volte amanhã para manter sua sequência</small></div><div className="daily-time"><span>NOVO DESAFIO EM</span><strong>{countdown}</strong><button onClick={startDaily}>JOGAR DESAFIO →</button></div></section>
+    <section className="massaki-course"><div className="course-brand"><MassakiBrand /></div><div><span>DO JOGO PARA O MICROFONE</span><h2>Quer evoluir suas rimas de verdade?</h2><p>Conheça o método de rima de Victor Massaki e transforme repertório em flow, técnica e presença.</p></div><a href="https://www.massaririmas.com" target="_blank" rel="noreferrer">CONHECER O CURSO <b>↗</b></a></section>
+    <section className="categories"><div className="section-title"><div><span>ESCOLHA SUA VIBE</span><h2>Categorias</h2></div><button>VER TODAS →</button></div><div className="category-grid">{[["🎤","Rap Nacional","324 palavras","yellow"],["◎","Rap Internacional","286 palavras","red"],["⚔","Batalhas de Rima","198 palavras","white"],["◉","Old School","172 palavras","gray"]].map(([ic,t,n,c])=><button key={t} className={`category-card ${c}`} onClick={startInfinite}><i>{ic}</i><b>{t}</b><span>{n}</span><em>→</em></button>)}</div></section>
   </main>;
 
   return <main className="game-shell">
-    <header><Logo /><button className="back" onClick={() => setScreen("home")}>← início</button><div className="game-stats"><span>🔥 <b>3</b> combo</span><span>⭐ <b>{score}</b> pts</span><span>⏱ <b>{String(Math.floor(seconds/60)).padStart(2,"0")}:{String(seconds%60).padStart(2,"0")}</b></span></div></header>
-    <div className="game-top"><div><span>PARTIDA INFINITA</span><h1>Underground Essentials</h1></div><div className="word-progress"><b>{completed}/{puzzle.words.length}</b><span>palavras</span><i><em style={{width:`${completed/puzzle.words.length*100}%`}} /></i></div></div>
+    <header><Logo /><button className="back" onClick={() => setScreen("home")}>← início</button><MassakiBrand compact /><div className="game-stats"><span>🔥 <b>{streak}</b> dias</span><span>⭐ <b>{finalScore}</b> pts</span><span>⏱ <b>{String(Math.floor(seconds/60)).padStart(2,"0")}:{String(seconds%60).padStart(2,"0")}</b></span></div></header>
+    <div className="game-top"><div><span>{mode === "daily" ? `DESAFIO DIÁRIO #${dailyNumber}` : "MODO INFINITO"}</span><h1>{mode === "daily" ? "O mesmo beat para toda a cena" : "Underground Essentials"}</h1></div><div className="word-progress"><b>{completed}/{puzzle.words.length}</b><span>palavras</span><i><em style={{width:`${completed/puzzle.words.length*100}%`}} /></i></div></div>
     {toast && <button className="toast" onClick={() => setToast("")}>{toast}<span>×</span></button>}
     <section className="play-area">
       <div className="board-wrap"><div className="board" style={{gridTemplateColumns:`repeat(${cols.length}, 1fr)`}}>{rows.flatMap((_,ri)=>cols.map((_,ci)=>{const r=ri+puzzle.bounds[0],c=ci+puzzle.bounds[2],cell=puzzle.cells.get(key(r,c)); if(!cell)return <div className="blank" key={key(r,c)}/>; const selected=cell.across===active||cell.down===active; return <label className={`tile ${selected?"selected":""} ${answers[key(r,c)]===cell.letter?"correct":""}`} key={key(r,c)} onClick={()=>selectCell(r,c)}>{cell.number&&<sup>{cell.number}</sup>}<input ref={element => { inputRefs.current[key(r,c)] = element; }} aria-label={`linha ${r}, coluna ${c}`} maxLength={1} value={answers[key(r,c)]||""} onFocus={()=>{if(cell.across!==active&&cell.down!==active)setActive((cell.across??cell.down)!);}} onKeyDown={e=>handleCellKeyDown(e,r,c)} onChange={e=>typeCell(r,c,e.target.value)}/></label>}))}</div><div className="mobile-clue"><span>{current.number} {current.direction === "across" ? "→" : "↓"}</span><p>{current.hint}</p></div></div>
-      <aside><div className="tabs"><button className="active">PISTAS</button><button>PROGRESSO</button></div><div className="clue-scroll">{(["across","down"] as const).map(dir=><div className="clue-group" key={dir}><h3>{dir==="across"?"HORIZONTAIS →":"VERTICAIS ↓"}</h3>{puzzle.words.map((w,i)=>w.direction===dir&&<button key={w.word} className={active===i?"active":""} onClick={()=>selectWord(i)}><b>{w.number}</b><span>{w.hint}<small>{w.word.length} letras · {w.difficulty}</small></span></button>)}</div>)}</div><div className="tools"><button onClick={showHint}>💡 <span><b>Dica</b><small>−10 pts</small></span></button><button onClick={revealLetter}>◐ <span><b>Revelar letra</b><small>−20 pts</small></span></button><button onClick={restart}>↻ <span><b>Novo jogo</b><small>novo tabuleiro</small></span></button></div></aside>
+      <aside><div className="tabs"><button className="active">PISTAS</button><button>PROGRESSO</button></div><div className="clue-scroll">{(["across","down"] as const).map(dir=><div className="clue-group" key={dir}><h3>{dir==="across"?"HORIZONTAIS →":"VERTICAIS ↓"}</h3>{puzzle.words.map((w,i)=>w.direction===dir&&<button key={w.word} className={active===i?"active":""} onClick={()=>selectWord(i)}><b>{w.number}</b><span>{w.hint}<small>{w.word.length} letras · {w.difficulty}</small></span></button>)}</div>)}</div><div className="tools"><button onClick={showHint}>💡 <span><b>Dica</b><small>−10 pts</small></span></button><button onClick={revealLetter}>◐ <span><b>Revelar letra</b><small>−20 pts</small></span></button><button onClick={mode === "daily" ? startDaily : startInfinite}>↻ <span><b>Reiniciar</b><small>{mode === "daily" ? "mesmo tabuleiro" : "novo tabuleiro"}</small></span></button></div></aside>
     </section>
+    {showResult && <div className="result-backdrop" role="dialog" aria-modal="true" aria-label="Resultado do desafio"><div className="result-modal">
+      <button className="result-close" onClick={() => setShowResult(false)} aria-label="Fechar">×</button>
+      <div className="result-kicker">DESAFIO #{dailyNumber} COMPLETO</div><h2>VOCÊ FECHOU<br/><em>O TABULEIRO.</em></h2><p>Agora mostra pra cena — sem entregar nenhuma resposta.</p>
+      <div className="share-grid">{Array.from({length: Math.min(16,puzzle.words.length)},(_,index)=><i className={index < hintsUsed ? "hinted" : "solved"} key={index}></i>)}</div>
+      <div className="result-stats"><span><b>{String(Math.floor(seconds/60)).padStart(2,"0")}:{String(seconds%60).padStart(2,"0")}</b><small>TEMPO</small></span><span><b>{finalScore}</b><small>PONTOS</small></span><span><b>🔥 {streak}</b><small>SEQUÊNCIA</small></span></div>
+      <button className="share-button" onClick={shareResult}>COMPARTILHAR RESULTADO <b>↗</b></button>
+      <div className="next-daily"><span>PRÓXIMO DESAFIO EM</span><b>{countdown}</b></div>
+      <a className="result-course" href="https://www.massaririmas.com" target="_blank" rel="noreferrer"><span className="massaki-crop"><img src="/massaki-mark.png" alt="" /></span><span><small>CURTIU O DESAFIO?</small><b>Leve suas rimas para o próximo nível →</b></span></a>
+    </div></div>}
   </main>;
 }
