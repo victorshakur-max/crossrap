@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -6,10 +6,10 @@ const geist = Geist({ variable: "--font-geist", subsets: ["latin"] });
 const mono = Geist_Mono({ variable: "--font-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000"),
   title: "CrossRap — Onde o rap encontra as palavras",
   description: "Palavras cruzadas sobre Rap, Hip Hop, batalhas, graffiti, breaking e muito mais.",
   manifest: "/manifest.json",
-  themeColor: "#090909",
   openGraph: {
     title: "CrossRap",
     description: "Onde o rap encontra as palavras.",
@@ -17,6 +17,8 @@ export const metadata: Metadata = {
   },
   twitter: { card: "summary_large_image", images: ["/og.png"] },
 };
+
+export const viewport: Viewport = { themeColor: "#090909" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return <html lang="pt-BR"><body className={`${geist.variable} ${mono.variable}`}>{children}</body></html>;

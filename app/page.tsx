@@ -6,7 +6,7 @@ type Word = { word: string; hint: string; category: string; difficulty: "Fácil"
 type PlacedWord = Word & { row: number; col: number; direction: "across" | "down"; number: number };
 type Cell = { letter: string; number?: number; across?: number; down?: number };
 
-const WORDS: Word[] = [
+const RAW_WORDS: Word[] = [
   { word: "RACIONAIS", hint: "Grupo de Mano Brown, Ice Blue, Edi Rock e KL Jay.", category: "Rap Nacional", difficulty: "Fácil" },
   { word: "EMINEM", hint: "MC conhecido como Slim Shady.", category: "Rap Internacional", difficulty: "Fácil" },
   { word: "SABOTAGE", hint: "Rapper paulistano autor de Um Bom Lugar.", category: "Rap Nacional", difficulty: "Fácil" },
@@ -57,7 +57,8 @@ const WORDS: Word[] = [
   { word: "MIC", hint: "Abreviação em inglês do instrumento essencial do MC.", category: "Curiosidades", difficulty: "Fácil" },
   { word: "PUNCHLINE", hint: "Linha de impacto usada para atingir o oponente numa batalha.", category: "Battle Rap", difficulty: "Médio" },
   { word: "CYPRESS HILL", hint: "Grupo de Los Angeles liderado por B-Real.", category: "Rap Internacional", difficulty: "Médio" },
-].map((w) => ({ ...w, word: w.word.replace(/\s/g, "") }));
+];
+const WORDS: Word[] = RAW_WORDS.map((w) => ({ ...w, word: w.word.replace(/\s/g, "") }));
 
 const SIZE = 19;
 const key = (r: number, c: number) => `${r}:${c}`;
