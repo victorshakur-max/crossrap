@@ -211,6 +211,7 @@ export default function Home() {
   const cols = useMemo(() => Array.from({ length: puzzle.bounds[3] - puzzle.bounds[2] + 1 }), [puzzle]);
   const current = puzzle.words[active];
   const completed = puzzle.words.filter((w) => [...w.word].every((_, i) => answers[key(w.row + (w.direction === "down" ? i : 0), w.col + (w.direction === "across" ? i : 0))] === w.word[i])).length;
+  const allCellsFilled = [...puzzle.cells.keys()].every(location => Boolean(answers[location]));
   const finalScore = Math.max(0, completed * 100 + Math.max(0, 300 - seconds) - hintsUsed * 10);
   const saoPauloTime = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(now);
   const timePart = (type: Intl.DateTimeFormatPartTypes) => Number(saoPauloTime.find(part => part.type === type)?.value || 0);
@@ -244,6 +245,21 @@ export default function Home() {
       col: word.col + (word.direction === "across" ? i : 0),
     }));
   }
+
+  function wordIsFilled(wordIndex: number) {
+    return wordCells(wordIndex).every(({ row, col }) => Boolean(answers[key(row, col)]));
+  }
+
+  function wordIsSolved(wordIndex: number) {
+    const word = puzzle.words[wordIndex];
+    return wordCells(wordIndex).every(({ row, col }, index) => answers[key(row, col)] === word.word[index]);
+  }
+
+  useEffect(() => {
+    if (screen === "game" && allCellsFilled && completed < puzzle.words.length) {
+      setToast("Quase! As casas em vermelho precisam de ajuste.");
+    }
+  }, [allCellsFilled, completed, puzzle.words.length, screen]);
 
   function focusCell(row: number, col: number) {
     requestAnimationFrame(() => {
@@ -341,8 +357,8 @@ export default function Home() {
     <div className="game-top"><div><span>{mode === "daily" ? `DESAFIO DIÁRIO #${dailyNumber} · NÍVEL ACESSÍVEL` : "MODO INFINITO"}</span><h1>{mode === "daily" ? "Comece pelo que você já conhece" : "Underground Essentials"}</h1></div><div className="word-progress"><b>{completed}/{puzzle.words.length}</b><span>palavras</span><i><em style={{width:`${completed/puzzle.words.length*100}%`}} /></i></div></div>
     {toast && <button className="toast" onClick={() => setToast("")}>{toast}<span>×</span></button>}
     <section className="play-area">
-      <div className="board-wrap"><div className="board" style={{gridTemplateColumns:`repeat(${cols.length}, 1fr)`}}>{rows.flatMap((_,ri)=>cols.map((_,ci)=>{const r=ri+puzzle.bounds[0],c=ci+puzzle.bounds[2],cell=puzzle.cells.get(key(r,c)); if(!cell)return <div className="blank" key={key(r,c)}/>; const selected=cell.across===active||cell.down===active; return <label className={`tile ${selected?"selected":""} ${answers[key(r,c)]===cell.letter?"correct":""}`} key={key(r,c)} onClick={()=>selectCell(r,c)}>{cell.number&&<sup>{cell.number}</sup>}<input ref={element => { inputRefs.current[key(r,c)] = element; }} aria-label={`linha ${r}, coluna ${c}`} maxLength={1} value={answers[key(r,c)]||""} onFocus={()=>{if(cell.across!==active&&cell.down!==active)setActive((cell.across??cell.down)!);}} onKeyDown={e=>handleCellKeyDown(e,r,c)} onChange={e=>typeCell(r,c,e.target.value)}/></label>}))}</div><div className="mobile-clue"><span>{current.number} {current.direction === "across" ? "→" : "↓"}</span><p>{current.hint}</p></div></div>
-      <aside><div className="tabs"><button className="active">PISTAS</button><button>PROGRESSO</button></div><div className="clue-scroll">{(["across","down"] as const).map(dir=><div className="clue-group" key={dir}><h3>{dir==="across"?"HORIZONTAIS →":"VERTICAIS ↓"}</h3>{puzzle.words.map((w,i)=>w.direction===dir&&<button key={w.word} className={active===i?"active":""} onClick={()=>selectWord(i)}><b>{w.number}</b><span>{w.hint}<small>{w.category} · {w.word.length} letras · {w.difficulty}</small></span></button>)}</div>)}</div><div className="tools"><button onClick={showHint}>💡 <span><b>Dica</b><small>−10 pts</small></span></button><button onClick={revealLetter}>◐ <span><b>Revelar letra</b><small>−20 pts</small></span></button><button onClick={mode === "daily" ? startDaily : startInfinite}>↻ <span><b>Reiniciar</b><small>{mode === "daily" ? "mesmo tabuleiro" : "novo tabuleiro"}</small></span></button></div></aside>
+      <div className="board-wrap"><div className="board" style={{gridTemplateColumns:`repeat(${cols.length}, 1fr)`}}>{rows.flatMap((_,ri)=>cols.map((_,ci)=>{const r=ri+puzzle.bounds[0],c=ci+puzzle.bounds[2],cell=puzzle.cells.get(key(r,c)); if(!cell)return <div className="blank" key={key(r,c)}/>; const selected=cell.across===active||cell.down===active; const entered=answers[key(r,c)]; const checked=[cell.across,cell.down].some(index=>index!==undefined&&wordIsFilled(index)); const wrong=Boolean(entered)&&entered!==cell.letter&&checked; return <label className={`tile ${selected?"selected":""} ${entered===cell.letter?"correct":""} ${wrong?"wrong":""}`} key={key(r,c)} onClick={()=>selectCell(r,c)}>{cell.number&&<sup>{cell.number}</sup>}<input ref={element => { inputRefs.current[key(r,c)] = element; }} aria-label={`linha ${r}, coluna ${c}${wrong?", letra incorreta":""}`} aria-invalid={wrong} maxLength={1} value={entered||""} onFocus={()=>{if(cell.across!==active&&cell.down!==active)setActive((cell.across??cell.down)!);}} onKeyDown={e=>handleCellKeyDown(e,r,c)} onChange={e=>typeCell(r,c,e.target.value)}/></label>}))}</div><div className="mobile-clue"><span>{current.number} {current.direction === "across" ? "→" : "↓"}</span><p>{current.hint}</p></div></div>
+      <aside><div className="tabs"><button className="active">PISTAS</button><button>PROGRESSO</button></div><div className="clue-scroll">{(["across","down"] as const).map(dir=><div className="clue-group" key={dir}><h3>{dir==="across"?"HORIZONTAIS →":"VERTICAIS ↓"}</h3>{puzzle.words.map((w,i)=>{const hasError=wordIsFilled(i)&&!wordIsSolved(i);return w.direction===dir&&<button key={w.word} className={`${active===i?"active":""} ${hasError?"has-error":""}`} onClick={()=>selectWord(i)}><b>{w.number}</b><span>{w.hint}<small>{hasError?"REVISE ESTA PALAVRA · ":""}{w.category} · {w.word.length} letras · {w.difficulty}</small></span></button>})}</div>)}</div><div className="tools"><button onClick={showHint}>💡 <span><b>Dica</b><small>−10 pts</small></span></button><button onClick={revealLetter}>◐ <span><b>Revelar letra</b><small>−20 pts</small></span></button><button onClick={mode === "daily" ? startDaily : startInfinite}>↻ <span><b>Reiniciar</b><small>{mode === "daily" ? "mesmo tabuleiro" : "novo tabuleiro"}</small></span></button></div></aside>
     </section>
     {showResult && <div className="result-backdrop" role="dialog" aria-modal="true" aria-label="Resultado do desafio"><div className="result-modal">
       <button className="result-close" onClick={() => setShowResult(false)} aria-label="Fechar">×</button>
