@@ -82,7 +82,21 @@ function seededRandom(seed: number) {
 
 function generateCrossword(seed?: number): { cells: Map<string, Cell>; words: PlacedWord[]; bounds: [number, number, number, number] } {
   const random = seed === undefined ? Math.random : seededRandom(seed);
-  const shuffled = [...WORDS].sort(() => random() - 0.5).slice(0, 28);
+  const shuffle = (items: Word[]) => {
+    const result = [...items];
+    for (let index = result.length - 1; index > 0; index--) {
+      const target = Math.floor(random() * (index + 1));
+      [result[index], result[target]] = [result[target], result[index]];
+    }
+    return result;
+  };
+  const shuffled = seed === undefined
+    ? shuffle(WORDS).slice(0, 28)
+    : shuffle([
+        ...shuffle(WORDS.filter(item => item.difficulty === "Fácil")).slice(0, 18),
+        ...shuffle(WORDS.filter(item => item.difficulty === "Médio")).slice(0, 9),
+        ...shuffle(WORDS.filter(item => item.difficulty === "Difícil")).slice(0, 1),
+      ]);
   const cells = new Map<string, Cell>();
   const placed: PlacedWord[] = [];
 
@@ -317,18 +331,18 @@ export default function Home() {
       <div className="hero-copy"><div className="eyebrow"><span>●</span> O desafio do dia está no ar</div><h1>ONDE O RAP<br/>ENCONTRA AS<br/><em>PALAVRAS.</em></h1><p>Uma cruzada por dia. O mesmo desafio para toda a cena. Complete, mantenha sua sequência e compartilhe sem dar spoiler.</p><div className="hero-actions"><button className="primary" onClick={startDaily}>JOGAR O DESAFIO <span>→</span></button><button className="secondary" onClick={startInfinite}>∞ &nbsp; MODO INFINITO</button></div><div className="streak-line"><b>🔥 {streak} dias</b><span>Melhor sequência: {bestStreak}</span></div></div>
       <div className="record-wrap"><div className="orbit one">HIP HOP</div><div className="orbit two">+150 XP</div><div className="record"><div className="record-grooves"></div><div className="label"><b>CROSS<br/><span>RAP</span></b><small>SIDE A<br/>45 RPM</small></div></div><div className="tonearm"></div></div>
     </section>
-    <section className="daily-card"><div className="daily-art"><div className="bars">▥ ▤ ▥</div><span>DESAFIO<br/>DO DIA</span><b>#{dailyNumber}</b></div><div className="daily-info"><div className="eyebrow">TODO MUNDO NO MESMO BEAT</div><h2>CrossRap Diário #{dailyNumber}</h2><p>Um tabuleiro único · Disponível só hoje</p><div className="progress"><i style={{width: streak ? "78%" : "18%"}}></i></div><small>Volte amanhã para manter sua sequência</small></div><div className="daily-time"><span>NOVO DESAFIO EM</span><strong>{countdown}</strong><button onClick={startDaily}>JOGAR DESAFIO →</button></div></section>
+    <section className="daily-card"><div className="daily-art"><div className="bars">▥ ▤ ▥</div><span>DESAFIO<br/>DO DIA</span><b>#{dailyNumber}</b></div><div className="daily-info"><div className="eyebrow">TODO MUNDO NO MESMO BEAT</div><h2>CrossRap Diário #{dailyNumber}</h2><p>12–16 palavras · Nível acessível · Disponível só hoje</p><div className="progress"><i style={{width: streak ? "78%" : "18%"}}></i></div><small>Comece pelas mais conhecidas e mantenha sua sequência</small></div><div className="daily-time"><span>NOVO DESAFIO EM</span><strong>{countdown}</strong><button onClick={startDaily}>JOGAR DESAFIO →</button></div></section>
     <section className="massaki-course"><div className="course-brand"><MassakiBrand /></div><div><span>DO JOGO PARA O MICROFONE</span><h2>Quer evoluir suas rimas de verdade?</h2><p>Conheça o método de rima de Victor Massaki e transforme repertório em flow, técnica e presença.</p></div><a href="https://www.massaririmas.com" target="_blank" rel="noreferrer">CONHECER O CURSO <b>↗</b></a></section>
     <section className="categories"><div className="section-title"><div><span>ESCOLHA SUA VIBE</span><h2>Categorias</h2></div><button>VER TODAS →</button></div><div className="category-grid">{[["🎤","Rap Nacional","324 palavras","yellow"],["◎","Rap Internacional","286 palavras","red"],["⚔","Batalhas de Rima","198 palavras","white"],["◉","Old School","172 palavras","gray"]].map(([ic,t,n,c])=><button key={t} className={`category-card ${c}`} onClick={startInfinite}><i>{ic}</i><b>{t}</b><span>{n}</span><em>→</em></button>)}</div></section>
   </main>;
 
   return <main className="game-shell">
     <header><Logo /><button className="back" onClick={() => setScreen("home")}>← início</button><MassakiBrand compact /><div className="game-stats"><span>🔥 <b>{streak}</b> dias</span><span>⭐ <b>{finalScore}</b> pts</span><span>⏱ <b>{String(Math.floor(seconds/60)).padStart(2,"0")}:{String(seconds%60).padStart(2,"0")}</b></span></div></header>
-    <div className="game-top"><div><span>{mode === "daily" ? `DESAFIO DIÁRIO #${dailyNumber}` : "MODO INFINITO"}</span><h1>{mode === "daily" ? "O mesmo beat para toda a cena" : "Underground Essentials"}</h1></div><div className="word-progress"><b>{completed}/{puzzle.words.length}</b><span>palavras</span><i><em style={{width:`${completed/puzzle.words.length*100}%`}} /></i></div></div>
+    <div className="game-top"><div><span>{mode === "daily" ? `DESAFIO DIÁRIO #${dailyNumber} · NÍVEL ACESSÍVEL` : "MODO INFINITO"}</span><h1>{mode === "daily" ? "Comece pelo que você já conhece" : "Underground Essentials"}</h1></div><div className="word-progress"><b>{completed}/{puzzle.words.length}</b><span>palavras</span><i><em style={{width:`${completed/puzzle.words.length*100}%`}} /></i></div></div>
     {toast && <button className="toast" onClick={() => setToast("")}>{toast}<span>×</span></button>}
     <section className="play-area">
       <div className="board-wrap"><div className="board" style={{gridTemplateColumns:`repeat(${cols.length}, 1fr)`}}>{rows.flatMap((_,ri)=>cols.map((_,ci)=>{const r=ri+puzzle.bounds[0],c=ci+puzzle.bounds[2],cell=puzzle.cells.get(key(r,c)); if(!cell)return <div className="blank" key={key(r,c)}/>; const selected=cell.across===active||cell.down===active; return <label className={`tile ${selected?"selected":""} ${answers[key(r,c)]===cell.letter?"correct":""}`} key={key(r,c)} onClick={()=>selectCell(r,c)}>{cell.number&&<sup>{cell.number}</sup>}<input ref={element => { inputRefs.current[key(r,c)] = element; }} aria-label={`linha ${r}, coluna ${c}`} maxLength={1} value={answers[key(r,c)]||""} onFocus={()=>{if(cell.across!==active&&cell.down!==active)setActive((cell.across??cell.down)!);}} onKeyDown={e=>handleCellKeyDown(e,r,c)} onChange={e=>typeCell(r,c,e.target.value)}/></label>}))}</div><div className="mobile-clue"><span>{current.number} {current.direction === "across" ? "→" : "↓"}</span><p>{current.hint}</p></div></div>
-      <aside><div className="tabs"><button className="active">PISTAS</button><button>PROGRESSO</button></div><div className="clue-scroll">{(["across","down"] as const).map(dir=><div className="clue-group" key={dir}><h3>{dir==="across"?"HORIZONTAIS →":"VERTICAIS ↓"}</h3>{puzzle.words.map((w,i)=>w.direction===dir&&<button key={w.word} className={active===i?"active":""} onClick={()=>selectWord(i)}><b>{w.number}</b><span>{w.hint}<small>{w.word.length} letras · {w.difficulty}</small></span></button>)}</div>)}</div><div className="tools"><button onClick={showHint}>💡 <span><b>Dica</b><small>−10 pts</small></span></button><button onClick={revealLetter}>◐ <span><b>Revelar letra</b><small>−20 pts</small></span></button><button onClick={mode === "daily" ? startDaily : startInfinite}>↻ <span><b>Reiniciar</b><small>{mode === "daily" ? "mesmo tabuleiro" : "novo tabuleiro"}</small></span></button></div></aside>
+      <aside><div className="tabs"><button className="active">PISTAS</button><button>PROGRESSO</button></div><div className="clue-scroll">{(["across","down"] as const).map(dir=><div className="clue-group" key={dir}><h3>{dir==="across"?"HORIZONTAIS →":"VERTICAIS ↓"}</h3>{puzzle.words.map((w,i)=>w.direction===dir&&<button key={w.word} className={active===i?"active":""} onClick={()=>selectWord(i)}><b>{w.number}</b><span>{w.hint}<small>{w.category} · {w.word.length} letras · {w.difficulty}</small></span></button>)}</div>)}</div><div className="tools"><button onClick={showHint}>💡 <span><b>Dica</b><small>−10 pts</small></span></button><button onClick={revealLetter}>◐ <span><b>Revelar letra</b><small>−20 pts</small></span></button><button onClick={mode === "daily" ? startDaily : startInfinite}>↻ <span><b>Reiniciar</b><small>{mode === "daily" ? "mesmo tabuleiro" : "novo tabuleiro"}</small></span></button></div></aside>
     </section>
     {showResult && <div className="result-backdrop" role="dialog" aria-modal="true" aria-label="Resultado do desafio"><div className="result-modal">
       <button className="result-close" onClick={() => setShowResult(false)} aria-label="Fechar">×</button>
