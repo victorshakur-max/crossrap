@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 type Word = { word: string; hint: string; category: string; difficulty: "Fácil" | "Médio" | "Difícil" | "Lendário" };
 type PlacedWord = Word & { row: number; col: number; direction: "across" | "down"; number: number };
 type Cell = { letter: string; number?: number; across?: number; down?: number };
+type RankingEntry = { playerName: string; score: number; durationSeconds: number; isCurrentPlayer?: boolean };
+type RankingResult = { position: number; total: number; top: RankingEntry[] };
 
 const RAW_WORDS: Word[] = [
   { word: "RACIONAIS", hint: "Grupo de Mano Brown, Ice Blue, Edi Rock e KL Jay.", category: "Rap Nacional", difficulty: "Fácil" },
@@ -180,11 +182,15 @@ export default function Home() {
   const [score, setScore] = useState(0);
   const [toast, setToast] = useState("");
   const [showResult, setShowResult] = useState(false);
+  const [finishedSeconds, setFinishedSeconds] = useState<number | null>(null);
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
   const [now, setNow] = useState(() => new Date());
+  const [ranking, setRanking] = useState<RankingResult | null>(null);
+  const [rankingStatus, setRankingStatus] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const submittedRef = useRef(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -196,30 +202,34 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (screen !== "game") return;
+    if (screen !== "game" || finishedSeconds !== null) return;
     const id = setInterval(() => setSeconds(s => s + 1), 1000);
     return () => clearInterval(id);
-  }, [screen, puzzle]);
+  }, [screen, puzzle, finishedSeconds]);
 
   const startInfinite = useCallback(() => {
-    setMode("infinite"); setPuzzle(generateCrossword()); setAnswers({}); setScore(0); setSeconds(0); setActive(0); setHintsUsed(0); setShowResult(false); setScreen("game");
+    submittedRef.current=false; setMode("infinite"); setPuzzle(generateCrossword()); setAnswers({}); setScore(0); setSeconds(0); setFinishedSeconds(null); setActive(0); setHintsUsed(0); setRanking(null); setRankingStatus("idle"); setShowResult(false); setScreen("game");
   }, []);
   const startDaily = useCallback(() => {
-    setMode("daily"); setPuzzle(generateCrossword(seedFromDate(dateKey()))); setAnswers({}); setScore(0); setSeconds(0); setActive(0); setHintsUsed(0); setShowResult(false); setScreen("game");
+    submittedRef.current=false; setMode("daily"); setPuzzle(generateCrossword(seedFromDate(dateKey()))); setAnswers({}); setScore(0); setSeconds(0); setFinishedSeconds(null); setActive(0); setHintsUsed(0); setRanking(null); setRankingStatus("idle"); setShowResult(false); setScreen("game");
   }, []);
   const rows = useMemo(() => Array.from({ length: puzzle.bounds[1] - puzzle.bounds[0] + 1 }), [puzzle]);
   const cols = useMemo(() => Array.from({ length: puzzle.bounds[3] - puzzle.bounds[2] + 1 }), [puzzle]);
   const current = puzzle.words[active];
   const completed = puzzle.words.filter((w) => [...w.word].every((_, i) => answers[key(w.row + (w.direction === "down" ? i : 0), w.col + (w.direction === "across" ? i : 0))] === w.word[i])).length;
   const allCellsFilled = [...puzzle.cells.keys()].every(location => Boolean(answers[location]));
-  const finalScore = Math.max(0, completed * 100 + Math.max(0, 300 - seconds) - hintsUsed * 10);
+  const elapsedSeconds = finishedSeconds ?? seconds;
+  const finalScore = Math.max(0, completed * 100 + Math.max(0, 300 - elapsedSeconds) - hintsUsed * 10);
   const saoPauloTime = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(now);
   const timePart = (type: Intl.DateTimeFormatPartTypes) => Number(saoPauloTime.find(part => part.type === type)?.value || 0);
   const remaining = 86400 - (timePart("hour") % 24 * 3600 + timePart("minute") * 60 + timePart("second"));
   const countdown = `${String(Math.floor(remaining / 3600)).padStart(2,"0")}:${String(Math.floor(remaining % 3600 / 60)).padStart(2,"0")}:${String(remaining % 60).padStart(2,"0")}`;
 
   useEffect(() => {
-    if (!puzzle.words.length || completed !== puzzle.words.length || showResult) return;
+    if (!puzzle.words.length || completed !== puzzle.words.length || finishedSeconds !== null) return;
+    const finishTime = seconds;
+    setFinishedSeconds(finishTime);
+    setShowResult(true);
     let nextStreak = streak;
     let nextBest = bestStreak;
     if (mode === "daily") {
@@ -234,9 +244,21 @@ export default function Home() {
         }
       } catch { /* keep result available without storage */ }
     }
-    const timer = setTimeout(() => setShowResult(true), 350);
-    return () => clearTimeout(timer);
-  }, [completed, puzzle.words.length, showResult, mode, streak, bestStreak, today]);
+    if (mode === "daily" && !submittedRef.current) {
+      submittedRef.current = true;
+      setRankingStatus("loading");
+      try {
+        let playerId = localStorage.getItem("crossrap-player-id");
+        if (!playerId) { playerId = crypto.randomUUID(); localStorage.setItem("crossrap-player-id", playerId); }
+        const playerName = `MC ${playerId.slice(0, 4).toUpperCase()}`;
+        const resultScore = Math.max(0, puzzle.words.length * 100 + Math.max(0, 300 - finishTime) - hintsUsed * 10);
+        fetch("/api/ranking", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId, playerName, challengeDate: today, score: resultScore, durationSeconds: finishTime, hintsUsed }) })
+          .then(async response => { if (!response.ok) throw new Error("ranking unavailable"); return response.json(); })
+          .then(data => { setRanking(data); setRankingStatus("ready"); })
+          .catch(() => setRankingStatus("unavailable"));
+      } catch { setRankingStatus("unavailable"); }
+    }
+  }, [completed, puzzle.words.length, finishedSeconds, mode, streak, bestStreak, today, seconds, hintsUsed]);
 
   function wordCells(wordIndex = active) {
     const word = puzzle.words[wordIndex];
@@ -334,7 +356,7 @@ export default function Home() {
   async function shareResult() {
     const squares = Array.from({ length: Math.min(16, puzzle.words.length) }, (_, index) => index < hintsUsed ? "🟨" : "🟩");
     const grid = Array.from({ length: Math.ceil(squares.length / 4) }, (_, row) => squares.slice(row * 4, row * 4 + 4).join("")).join("\n");
-    const text = `CrossRap #${dailyNumber} 🎤\n${grid}\n⏱ ${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}  🔥 ${streak} dias\n\nVocê manja de rap? Jogue em ${window.location.origin}`;
+    const text = `CrossRap #${dailyNumber} 🎤\n${grid}\n⏱ ${String(Math.floor(elapsedSeconds/60)).padStart(2,"0")}:${String(elapsedSeconds%60).padStart(2,"0")}  🔥 ${streak} dias${ranking ? `  🏆 #${ranking.position}` : ""}\n\nVocê manja de rap? Jogue em ${window.location.origin}`;
     try {
       if (navigator.share) await navigator.share({ title: "Meu resultado no CrossRap", text, url: window.location.origin });
       else { await navigator.clipboard.writeText(text); setToast("Resultado copiado. Agora é só postar!"); }
@@ -364,7 +386,13 @@ export default function Home() {
       <button className="result-close" onClick={() => setShowResult(false)} aria-label="Fechar">×</button>
       <div className="result-kicker">DESAFIO #{dailyNumber} COMPLETO</div><h2>VOCÊ FECHOU<br/><em>O TABULEIRO.</em></h2><p>Agora mostra pra cena — sem entregar nenhuma resposta.</p>
       <div className="share-grid">{Array.from({length: Math.min(16,puzzle.words.length)},(_,index)=><i className={index < hintsUsed ? "hinted" : "solved"} key={index}></i>)}</div>
-      <div className="result-stats"><span><b>{String(Math.floor(seconds/60)).padStart(2,"0")}:{String(seconds%60).padStart(2,"0")}</b><small>TEMPO</small></span><span><b>{finalScore}</b><small>PONTOS</small></span><span><b>🔥 {streak}</b><small>SEQUÊNCIA</small></span></div>
+      <div className="result-stats"><span><b>{String(Math.floor(elapsedSeconds/60)).padStart(2,"0")}:{String(elapsedSeconds%60).padStart(2,"0")}</b><small>TEMPO FINAL</small></span><span><b>{finalScore}</b><small>PONTOS</small></span><span><b>🔥 {streak}</b><small>SEQUÊNCIA</small></span></div>
+      {mode === "daily" && <div className="daily-ranking">
+        <div className="ranking-head"><span>RANKING DE HOJE</span>{rankingStatus === "ready" && ranking && <b>VOCÊ ESTÁ EM <em>#{ranking.position}</em> DE {ranking.total}</b>}</div>
+        {rankingStatus === "loading" && <div className="ranking-message">Calculando sua posição na cena...</div>}
+        {rankingStatus === "unavailable" && <div className="ranking-message">Ranking aguardando conexão com o Supabase.</div>}
+        {rankingStatus === "ready" && ranking && <div className="ranking-list">{ranking.top.slice(0,5).map((entry,index)=><div className={entry.isCurrentPlayer?"you":""} key={`${entry.playerName}-${index}`}><b>{index+1}</b><span>{entry.playerName}{entry.isCurrentPlayer&&<small>VOCÊ</small>}</span><em>{String(Math.floor(entry.durationSeconds/60)).padStart(2,"0")}:{String(entry.durationSeconds%60).padStart(2,"0")}</em><strong>{entry.score} pts</strong></div>)}</div>}
+      </div>}
       <button className="share-button" onClick={shareResult}>COMPARTILHAR RESULTADO <b>↗</b></button>
       <div className="next-daily"><span>PRÓXIMO DESAFIO EM</span><b>{countdown}</b></div>
       <a className="result-course" href="https://www.massaririmas.com" target="_blank" rel="noreferrer"><span className="massaki-crop"><img src="/massaki-mark.png" alt="" /></span><span><small>CURTIU O DESAFIO?</small><b>Leve suas rimas para o próximo nível →</b></span></a>

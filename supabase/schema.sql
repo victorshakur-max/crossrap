@@ -39,9 +39,24 @@ create table public.game_results (
 );
 
 create index game_results_ranking on public.game_results(score desc, duration_seconds asc);
+
+create table public.daily_scores (
+  id uuid primary key default gen_random_uuid(),
+  player_id text not null,
+  player_name text not null,
+  challenge_date date not null,
+  score integer not null check (score >= 0),
+  duration_seconds integer not null check (duration_seconds > 0),
+  hints_used integer not null default 0,
+  completed_at timestamptz not null default now(),
+  unique(challenge_date, player_id)
+);
+
+create index daily_scores_ranking on public.daily_scores(challenge_date, score desc, duration_seconds asc, completed_at asc);
 alter table public.words enable row level security;
 alter table public.profiles enable row level security;
 alter table public.game_results enable row level security;
+alter table public.daily_scores enable row level security;
 create policy "approved words are public" on public.words for select using (approved = true);
 create policy "profiles are public" on public.profiles for select using (true);
 create policy "users update own profile" on public.profiles for update using (auth.uid() = id);
