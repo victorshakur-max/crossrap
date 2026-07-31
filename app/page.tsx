@@ -1,0 +1,251 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+type Word = { word: string; hint: string; category: string; difficulty: "Fácil" | "Médio" | "Difícil" | "Lendário" };
+type PlacedWord = Word & { row: number; col: number; direction: "across" | "down"; number: number };
+type Cell = { letter: string; number?: number; across?: number; down?: number };
+
+const WORDS: Word[] = [
+  { word: "RACIONAIS", hint: "Grupo de Mano Brown, Ice Blue, Edi Rock e KL Jay.", category: "Rap Nacional", difficulty: "Fácil" },
+  { word: "EMINEM", hint: "MC conhecido como Slim Shady.", category: "Rap Internacional", difficulty: "Fácil" },
+  { word: "SABOTAGE", hint: "Rapper paulistano autor de Um Bom Lugar.", category: "Rap Nacional", difficulty: "Fácil" },
+  { word: "TUPAC", hint: "Ícone do rap da Costa Oeste, também chamado 2Pac.", category: "Rap Internacional", difficulty: "Fácil" },
+  { word: "NAS", hint: "Rapper do Queensbridge que lançou Illmatic.", category: "Álbuns", difficulty: "Médio" },
+  { word: "ILLMATIC", hint: "Álbum de estreia de Nas, lançado em 1994.", category: "Álbuns", difficulty: "Médio" },
+  { word: "BK", hint: "Rapper carioca autor do álbum Castelos & Ruínas.", category: "Rap Nacional", difficulty: "Médio" },
+  { word: "EMICIDA", hint: "MC paulistano que fundou a Laboratório Fantasma.", category: "Rap Nacional", difficulty: "Fácil" },
+  { word: "DJONGA", hint: "Rapper mineiro que lançou Heresia.", category: "Rap Nacional", difficulty: "Fácil" },
+  { word: "RASHID", hint: "MC paulistano autor do álbum A Coragem da Luz.", category: "Rap Nacional", difficulty: "Médio" },
+  { word: "BLACKALIEN", hint: "Rapper fluminense do clássico Babylon By Gus.", category: "Rap Nacional", difficulty: "Difícil" },
+  { word: "CRI OLO", hint: "MC paulistano do álbum Nó na Orelha.", category: "Rap Nacional", difficulty: "Fácil" },
+  { word: "KENDRICK", hint: "Primeiro rapper a vencer o Pulitzer de Música.", category: "Rap Internacional", difficulty: "Médio" },
+  { word: "LAMAR", hint: "Sobrenome de Kendrick, autor de DAMN.", category: "Rap Internacional", difficulty: "Fácil" },
+  { word: "BIGGIE", hint: "Apelido de Christopher Wallace, o Notorious B.I.G.", category: "Rap Internacional", difficulty: "Fácil" },
+  { word: "OUTKAST", hint: "Dupla de Atlanta formada por André 3000 e Big Boi.", category: "Rap Internacional", difficulty: "Médio" },
+  { word: "RUN DMC", hint: "Trio do Queens que ajudou a levar o rap ao mainstream.", category: "História", difficulty: "Médio" },
+  { word: "PUBLIC ENEMY", hint: "Grupo de Chuck D e Flavor Flav.", category: "História", difficulty: "Médio" },
+  { word: "KRS ONE", hint: "MC do Boogie Down Productions conhecido como The Teacher.", category: "MCs", difficulty: "Difícil" },
+  { word: "RAKIM", hint: "MC da dupla com Eric B., referência do liricismo.", category: "MCs", difficulty: "Difícil" },
+  { word: "JAY Z", hint: "Rapper do Brooklyn que lançou Reasonable Doubt.", category: "Rap Internacional", difficulty: "Fácil" },
+  { word: "KANYE", hint: "Produtor e rapper de The College Dropout.", category: "Beatmakers", difficulty: "Fácil" },
+  { word: "DRE", hint: "Doutor que produziu The Chronic e lançou Eminem.", category: "Beatmakers", difficulty: "Fácil" },
+  { word: "DILLA", hint: "Produtor de Detroit, autor de Donuts.", category: "Beatmakers", difficulty: "Difícil" },
+  { word: "PREMIER", hint: "DJ e produtor, metade da dupla Gang Starr.", category: "DJ", difficulty: "Difícil" },
+  { word: "GANG STARR", hint: "Dupla formada por Guru e DJ Premier.", category: "Rap Internacional", difficulty: "Difícil" },
+  { word: "KOOL HERC", hint: "DJ associado às primeiras festas do hip hop no Bronx.", category: "História", difficulty: "Médio" },
+  { word: "BRONX", hint: "Bairro de Nova York reconhecido como berço do hip hop.", category: "História", difficulty: "Fácil" },
+  { word: "BREAK", hint: "Trecho instrumental que DJs prolongavam com dois discos.", category: "DJ", difficulty: "Médio" },
+  { word: "CYPHER", hint: "Roda em que MCs rimam ou b-boys dançam.", category: "Curiosidades", difficulty: "Médio" },
+  { word: "BBOY", hint: "Dançarino ligado à cultura breaking.", category: "Breaking", difficulty: "Fácil" },
+  { word: "TOPROCK", hint: "Passos de breaking executados em pé.", category: "Breaking", difficulty: "Difícil" },
+  { word: "FREEZE", hint: "Pose estática usada para finalizar movimentos no breaking.", category: "Breaking", difficulty: "Médio" },
+  { word: "TAG", hint: "Assinatura rápida de um artista de graffiti.", category: "Graffiti", difficulty: "Fácil" },
+  { word: "WILDSTYLE", hint: "Estilo de graffiti com letras complexas e entrelaçadas.", category: "Graffiti", difficulty: "Difícil" },
+  { word: "SPRAY", hint: "Ferramenta em lata muito usada no graffiti.", category: "Graffiti", difficulty: "Fácil" },
+  { word: "FREESTYLE", hint: "Rima improvisada, criada no momento.", category: "Battle Rap", difficulty: "Fácil" },
+  { word: "BATALHA", hint: "Disputa verbal entre MCs usando rimas.", category: "Battle Rap", difficulty: "Fácil" },
+  { word: "SANTA CRUZ", hint: "Estação paulistana que deu nome a uma batalha de MCs histórica.", category: "Battle Rap", difficulty: "Difícil" },
+  { word: "ALDEIA", hint: "Batalha de rima criada em Barueri, conhecida pela sigla BDA.", category: "Battle Rap", difficulty: "Médio" },
+  { word: "FLOW", hint: "Cadência com que o MC encaixa palavras no beat.", category: "Curiosidades", difficulty: "Fácil" },
+  { word: "BEAT", hint: "Base instrumental sobre a qual o MC rima.", category: "Beatmakers", difficulty: "Fácil" },
+  { word: "SAMPLE", hint: "Trecho de áudio reutilizado em uma nova produção.", category: "Beatmakers", difficulty: "Médio" },
+  { word: "BOOMBAP", hint: "Estética de rap marcada por bateria forte e samples.", category: "Old School", difficulty: "Médio" },
+  { word: "TRAP", hint: "Subgênero marcado por 808s e hi-hats acelerados.", category: "Trap", difficulty: "Fácil" },
+  { word: "SCRATCH", hint: "Técnica de mover o vinil ritmicamente sob a agulha.", category: "DJ", difficulty: "Médio" },
+  { word: "MIXTAPE", hint: "Projeto musical frequentemente lançado fora do formato de álbum.", category: "Música", difficulty: "Fácil" },
+  { word: "MIC", hint: "Abreviação em inglês do instrumento essencial do MC.", category: "Curiosidades", difficulty: "Fácil" },
+  { word: "PUNCHLINE", hint: "Linha de impacto usada para atingir o oponente numa batalha.", category: "Battle Rap", difficulty: "Médio" },
+  { word: "CYPRESS HILL", hint: "Grupo de Los Angeles liderado por B-Real.", category: "Rap Internacional", difficulty: "Médio" },
+].map((w) => ({ ...w, word: w.word.replace(/\s/g, "") }));
+
+const SIZE = 19;
+const key = (r: number, c: number) => `${r}:${c}`;
+
+function generateCrossword(): { cells: Map<string, Cell>; words: PlacedWord[]; bounds: [number, number, number, number] } {
+  const shuffled = [...WORDS].sort(() => Math.random() - 0.5).slice(0, 28);
+  const cells = new Map<string, Cell>();
+  const placed: PlacedWord[] = [];
+
+  function canPlace(word: string, row: number, col: number, dir: "across" | "down") {
+    let crossings = 0;
+    if (row < 1 || col < 1 || (dir === "across" ? col + word.length >= SIZE - 1 : row + word.length >= SIZE - 1)) return -1;
+    for (let i = 0; i < word.length; i++) {
+      const r = row + (dir === "down" ? i : 0), c = col + (dir === "across" ? i : 0);
+      const existing = cells.get(key(r, c));
+      if (existing && existing.letter !== word[i]) return -1;
+      if (existing) crossings++;
+      if (!existing) {
+        const sideA = dir === "across" ? cells.get(key(r - 1, c)) : cells.get(key(r, c - 1));
+        const sideB = dir === "across" ? cells.get(key(r + 1, c)) : cells.get(key(r, c + 1));
+        if (sideA || sideB) return -1;
+      }
+    }
+    const before = dir === "across" ? cells.get(key(row, col - 1)) : cells.get(key(row - 1, col));
+    const after = dir === "across" ? cells.get(key(row, col + word.length)) : cells.get(key(row + word.length, col));
+    return before || after ? -1 : crossings;
+  }
+
+  function put(item: Word, row: number, col: number, direction: "across" | "down") {
+    const idx = placed.length;
+    placed.push({ ...item, row, col, direction, number: idx + 1 });
+    [...item.word].forEach((letter, i) => {
+      const r = row + (direction === "down" ? i : 0), c = col + (direction === "across" ? i : 0);
+      const current = cells.get(key(r, c)) || { letter };
+      cells.set(key(r, c), { ...current, letter, [direction]: idx });
+    });
+  }
+
+  const first = shuffled.shift()!;
+  put(first, 9, Math.floor((SIZE - first.word.length) / 2), "across");
+  for (const item of shuffled) {
+    if (placed.length >= 16) break;
+    let best: { row: number; col: number; direction: "across" | "down"; score: number } | null = null;
+    for (const pw of placed) for (let a = 0; a < item.word.length; a++) for (let b = 0; b < pw.word.length; b++) {
+      if (item.word[a] !== pw.word[b]) continue;
+      const direction = pw.direction === "across" ? "down" : "across";
+      const row = direction === "down" ? pw.row - a : pw.row + b;
+      const col = direction === "across" ? pw.col - a : pw.col + b;
+      const score = canPlace(item.word, row, col, direction);
+      if (score > 0 && (!best || score > best.score || Math.random() > .7)) best = { row, col, direction, score };
+    }
+    if (best) put(item, best.row, best.col, best.direction);
+  }
+  const starts = new Map<string, number>();
+  let n = 1;
+  [...placed].sort((a, b) => a.row - b.row || a.col - b.col).forEach((w) => {
+    const k = key(w.row, w.col);
+    if (!starts.has(k)) starts.set(k, n++);
+    w.number = starts.get(k)!;
+  });
+  starts.forEach((number, k) => cells.set(k, { ...cells.get(k)!, number }));
+  const coords = [...cells.keys()].map((k) => k.split(":").map(Number));
+  return { cells, words: placed, bounds: [Math.min(...coords.map(x => x[0])), Math.max(...coords.map(x => x[0])), Math.min(...coords.map(x => x[1])), Math.max(...coords.map(x => x[1]))] };
+}
+
+function Logo() {
+  return <div className="logo" aria-label="CrossRap"><span>CR</span><strong>CROSS<span>RAP</span></strong></div>;
+}
+
+export default function Home() {
+  const [screen, setScreen] = useState<"home" | "game">("home");
+  const [puzzle, setPuzzle] = useState(() => generateCrossword());
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [active, setActive] = useState(0);
+  const [seconds, setSeconds] = useState(0);
+  const [score, setScore] = useState(0);
+  const [toast, setToast] = useState("");
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  useEffect(() => {
+    if (screen !== "game") return;
+    const id = setInterval(() => setSeconds(s => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [screen, puzzle]);
+
+  const restart = useCallback(() => {
+    setPuzzle(generateCrossword()); setAnswers({}); setScore(0); setSeconds(0); setActive(0); setScreen("game");
+  }, []);
+  const rows = useMemo(() => Array.from({ length: puzzle.bounds[1] - puzzle.bounds[0] + 1 }), [puzzle]);
+  const cols = useMemo(() => Array.from({ length: puzzle.bounds[3] - puzzle.bounds[2] + 1 }), [puzzle]);
+  const current = puzzle.words[active];
+  const completed = puzzle.words.filter((w) => [...w.word].every((_, i) => answers[key(w.row + (w.direction === "down" ? i : 0), w.col + (w.direction === "across" ? i : 0))] === w.word[i])).length;
+
+  function wordCells(wordIndex = active) {
+    const word = puzzle.words[wordIndex];
+    return [...word.word].map((_, i) => ({
+      row: word.row + (word.direction === "down" ? i : 0),
+      col: word.col + (word.direction === "across" ? i : 0),
+    }));
+  }
+
+  function focusCell(row: number, col: number) {
+    requestAnimationFrame(() => {
+      const input = inputRefs.current[key(row, col)];
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  function selectWord(wordIndex: number, focusFirstEmpty = true) {
+    setActive(wordIndex);
+    const cells = wordCells(wordIndex);
+    const target = focusFirstEmpty
+      ? cells.find(({ row, col }) => !answers[key(row, col)]) ?? cells[0]
+      : cells[0];
+    focusCell(target.row, target.col);
+  }
+
+  function moveWithinWord(r: number, c: number, step: number, wordIndex = active) {
+    const cells = wordCells(wordIndex);
+    const position = cells.findIndex(cell => cell.row === r && cell.col === c);
+    const target = cells[position + step];
+    if (target) focusCell(target.row, target.col);
+  }
+
+  function typeCell(r: number, c: number, value: string) {
+    const letter = value.toUpperCase().replace(/[^A-Z]/g, "").slice(-1);
+    setAnswers(prev => ({ ...prev, [key(r, c)]: letter }));
+    if (letter) moveWithinWord(r, c, 1);
+  }
+
+  function selectCell(r: number, c: number) {
+    const cell = puzzle.cells.get(key(r, c));
+    if (!cell) return;
+    if (cell.across !== undefined && cell.down !== undefined) {
+      setActive(active === cell.across ? cell.down : cell.across);
+    } else {
+      setActive((cell.across ?? cell.down)!);
+    }
+  }
+
+  function handleCellKeyDown(e: React.KeyboardEvent<HTMLInputElement>, r: number, c: number) {
+    const cell = puzzle.cells.get(key(r, c));
+    if (!cell) return;
+    if (e.key === "Backspace" && !answers[key(r, c)]) {
+      e.preventDefault();
+      const cells = wordCells();
+      const position = cells.findIndex(item => item.row === r && item.col === c);
+      const previous = cells[position - 1];
+      if (previous) {
+        setAnswers(old => ({ ...old, [key(previous.row, previous.col)]: "" }));
+        focusCell(previous.row, previous.col);
+      }
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      if (cell.across === undefined) return;
+      e.preventDefault(); setActive(cell.across); moveWithinWord(r, c, e.key === "ArrowRight" ? 1 : -1, cell.across);
+    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      if (cell.down === undefined) return;
+      e.preventDefault(); setActive(cell.down); moveWithinWord(r, c, e.key === "ArrowDown" ? 1 : -1, cell.down);
+    } else if (e.key === " " && cell.across !== undefined && cell.down !== undefined) {
+      e.preventDefault(); setActive(active === cell.across ? cell.down : cell.across);
+    }
+  }
+  function revealLetter() {
+    const spots = [...current.word].map((_, i) => [current.row + (current.direction === "down" ? i : 0), current.col + (current.direction === "across" ? i : 0)]).filter(([r,c], i) => answers[key(r,c)] !== current.word[i]);
+    if (!spots.length) return;
+    const [r,c] = spots[Math.floor(Math.random() * spots.length)];
+    setAnswers(a => ({ ...a, [key(r,c)]: puzzle.cells.get(key(r,c))!.letter })); setScore(s => Math.max(0, s - 20)); setToast("Letra revelada · −20 pts");
+  }
+  function showHint() { setScore(s => Math.max(0, s - 10)); setToast(current.hint); }
+
+  if (screen === "home") return <main className="shell home">
+    <header><Logo /><nav><button className="nav-active">Início</button><button onClick={() => setScreen("game")}>Jogar</button><button>Ranking</button><button>Conquistas</button></nav><button className="profile">VN <i>4</i></button></header>
+    <section className="hero">
+      <div className="hero-copy"><div className="eyebrow"><span>●</span> O desafio do dia está no ar</div><h1>ONDE O RAP<br/>ENCONTRA AS<br/><em>PALAVRAS.</em></h1><p>Teste seu conhecimento, complete as rimas e prove que sua mente também tem flow.</p><div className="hero-actions"><button className="primary" onClick={restart}>JOGAR AGORA <span>→</span></button><button className="secondary">▶ &nbsp; COMO JOGAR</button></div><small>🔥 <b>2.847</b> jogadores online agora</small></div>
+      <div className="record-wrap"><div className="orbit one">HIP HOP</div><div className="orbit two">+150 XP</div><div className="record"><div className="record-grooves"></div><div className="label"><b>CROSS<br/><span>RAP</span></b><small>SIDE A<br/>45 RPM</small></div></div><div className="tonearm"></div></div>
+    </section>
+    <section className="daily-card"><div className="daily-art"><div className="bars">▥ ▤ ▥</div><span>DESAFIO<br/>DO DIA</span><b>#127</b></div><div className="daily-info"><div className="eyebrow">EDIÇÃO ESPECIAL</div><h2>Era de Ouro do Rap Nacional</h2><p>12 palavras · Dificuldade média</p><div className="progress"><i style={{width:"68%"}}></i></div><small>68% dos jogadores completaram hoje</small></div><div className="daily-time"><span>TERMINA EM</span><strong>08:42:17</strong><button onClick={restart}>JOGAR DESAFIO →</button></div></section>
+    <section className="categories"><div className="section-title"><div><span>ESCOLHA SUA VIBE</span><h2>Categorias</h2></div><button>VER TODAS →</button></div><div className="category-grid">{[["🎤","Rap Nacional","324 palavras","yellow"],["◎","Rap Internacional","286 palavras","red"],["⚔","Batalhas de Rima","198 palavras","white"],["◉","Old School","172 palavras","gray"]].map(([ic,t,n,c])=><button key={t} className={`category-card ${c}`} onClick={restart}><i>{ic}</i><b>{t}</b><span>{n}</span><em>→</em></button>)}</div></section>
+  </main>;
+
+  return <main className="game-shell">
+    <header><Logo /><button className="back" onClick={() => setScreen("home")}>← início</button><div className="game-stats"><span>🔥 <b>3</b> combo</span><span>⭐ <b>{score}</b> pts</span><span>⏱ <b>{String(Math.floor(seconds/60)).padStart(2,"0")}:{String(seconds%60).padStart(2,"0")}</b></span></div></header>
+    <div className="game-top"><div><span>PARTIDA INFINITA</span><h1>Underground Essentials</h1></div><div className="word-progress"><b>{completed}/{puzzle.words.length}</b><span>palavras</span><i><em style={{width:`${completed/puzzle.words.length*100}%`}} /></i></div></div>
+    {toast && <button className="toast" onClick={() => setToast("")}>{toast}<span>×</span></button>}
+    <section className="play-area">
+      <div className="board-wrap"><div className="board" style={{gridTemplateColumns:`repeat(${cols.length}, 1fr)`}}>{rows.flatMap((_,ri)=>cols.map((_,ci)=>{const r=ri+puzzle.bounds[0],c=ci+puzzle.bounds[2],cell=puzzle.cells.get(key(r,c)); if(!cell)return <div className="blank" key={key(r,c)}/>; const selected=cell.across===active||cell.down===active; return <label className={`tile ${selected?"selected":""} ${answers[key(r,c)]===cell.letter?"correct":""}`} key={key(r,c)} onClick={()=>selectCell(r,c)}>{cell.number&&<sup>{cell.number}</sup>}<input ref={element => { inputRefs.current[key(r,c)] = element; }} aria-label={`linha ${r}, coluna ${c}`} maxLength={1} value={answers[key(r,c)]||""} onFocus={()=>{if(cell.across!==active&&cell.down!==active)setActive((cell.across??cell.down)!);}} onKeyDown={e=>handleCellKeyDown(e,r,c)} onChange={e=>typeCell(r,c,e.target.value)}/></label>}))}</div><div className="mobile-clue"><span>{current.number} {current.direction === "across" ? "→" : "↓"}</span><p>{current.hint}</p></div></div>
+      <aside><div className="tabs"><button className="active">PISTAS</button><button>PROGRESSO</button></div><div className="clue-scroll">{(["across","down"] as const).map(dir=><div className="clue-group" key={dir}><h3>{dir==="across"?"HORIZONTAIS →":"VERTICAIS ↓"}</h3>{puzzle.words.map((w,i)=>w.direction===dir&&<button key={w.word} className={active===i?"active":""} onClick={()=>selectWord(i)}><b>{w.number}</b><span>{w.hint}<small>{w.word.length} letras · {w.difficulty}</small></span></button>)}</div>)}</div><div className="tools"><button onClick={showHint}>💡 <span><b>Dica</b><small>−10 pts</small></span></button><button onClick={revealLetter}>◐ <span><b>Revelar letra</b><small>−20 pts</small></span></button><button onClick={restart}>↻ <span><b>Novo jogo</b><small>novo tabuleiro</small></span></button></div></aside>
+    </section>
+  </main>;
+}
